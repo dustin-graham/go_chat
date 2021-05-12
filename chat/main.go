@@ -2,7 +2,10 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
+	"github.com/google/uuid"
+	"io"
 	"log"
 	"net"
 	"strings"
@@ -15,18 +18,20 @@ type ChatServer struct {
 }
 
 type ChatClient struct {
-	Name string
-	conn net.Conn
+	ClientId uuid.UUID
+	Name     string
+	conn     net.Conn
 }
 
 type Message struct {
+	ClientId   uuid.UUID
 	ClientName string
 	UtteredAt  time.Time
 	Text       string
 }
 
 func (m *Message) String() string {
-	return fmt.Sprintf("%s said: %s (%s)", m.ClientName, m.Text, m.UtteredAt.Format(time.RFC3339))
+	return fmt.Sprintf("%s: %s (%s)", m.ClientName, m.Text, m.UtteredAt.Format(time.RFC3339))
 }
 
 func main() {
@@ -79,7 +84,6 @@ func (s *ChatServer) Listen() error {
 			if err != nil {
 				log.Fatalf("error building the client: %v", err)
 			}
-			s.clients = append(s.clients, client)
 			go s.Serve(client)
 		}()
 	}
@@ -91,27 +95,50 @@ func (s *ChatServer) BuildClient(conn net.Conn) (*ChatClient, error) {
 		return nil, err
 	}
 	return &ChatClient{
-		Name: clientName,
-		conn: conn,
+		ClientId: uuid.New(),
+		Name:     clientName,
+		conn:     conn,
 	}, nil
 }
 
 func (s *ChatServer) Serve(client *ChatClient) {
+	s.clients = append(s.clients, client)
 	client.Greet()
+Serve:
 	for {
 		message, err := client.ReadMessage()
 		if err != nil {
-			log.Fatalf("error reading message input")
+			if errors.Is(err, io.EOF) {
+				println("closing client connection")
+				// close the connection and remove the client
+				s.RemoveClient(client)
+				_ = client.Close()
+				break Serve
+			} else {
+				log.Fatalf("error reading message input")
+			}
 		}
 		s.NotifyClients(message)
 	}
 }
 
+func (s *ChatServer) RemoveClient(client *ChatClient) {
+	var clientIndex int
+	for i, chatClient := range s.clients {
+		if chatClient == client {
+			clientIndex = i
+		}
+	}
+	s.clients = append(s.clients[:clientIndex], s.clients[clientIndex+1:]...)
+}
+
 func (s *ChatServer) NotifyClients(message *Message) {
 	for _, client := range s.clients {
-		err := client.Notify(message)
-		if err != nil {
-			log.Fatalf("error notifying client")
+		if client.ClientId != message.ClientId {
+			err := client.Notify(message)
+			if err != nil {
+				log.Fatalf("error notifying client")
+			}
 		}
 	}
 }
@@ -132,15 +159,20 @@ func (c *ChatClient) Notify(message *Message) error {
 
 func (c *ChatClient) ReadMessage() (*Message, error) {
 	input, err := bufio.NewReader(c.conn).ReadString('\n')
-	input = trimMessage(input)
 	if err != nil {
 		return nil, err
 	}
+	input = trimMessage(input)
 	return &Message{
+		ClientId:   c.ClientId,
 		ClientName: c.Name,
 		UtteredAt:  time.Now(),
 		Text:       input,
 	}, nil
+}
+
+func (c *ChatClient) Close() error {
+	return c.conn.Close()
 }
 
 func trimMessage(messageText string) string {

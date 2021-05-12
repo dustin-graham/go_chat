@@ -1,0 +1,5 @@
+Issues to handle:
+how do I handle client disconnections? I want to be able to clean up the client references when the client disconnects.
+
+Features to add:
+a request help feature: type in //help and get a prompt that tells you how to use the chat service
