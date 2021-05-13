@@ -15,12 +15,28 @@ import (
 type ChatServer struct {
 	listener net.Listener
 	clients  []*ChatClient
+	lobby    Room
 	rooms    map[uuid.UUID]*Room
+}
+
+func NewChatServer() *ChatServer {
+	lobby := NewRoom(uuid.New(), "Lobby")
+	return &ChatServer{
+		clients: []*ChatClient{},
+		rooms: map[uuid.UUID]*Room{
+			lobby.Id: lobby,
+		},
+		lobby: *lobby,
+	}
 }
 
 type Room struct {
 	Id   uuid.UUID
 	Name string
+}
+
+func NewRoom(id uuid.UUID, name string) *Room {
+	return &Room{Id: id, Name: name}
 }
 
 func (r Room) String() string {
@@ -31,11 +47,11 @@ type ChatClient struct {
 	ClientId uuid.UUID
 	Name     string
 	conn     net.Conn
-	RoomId   *uuid.UUID
+	RoomId   uuid.UUID
 }
 
 type Message struct {
-	Client    *ChatClient
+	Client    ChatClient
 	UtteredAt time.Time
 	Text      string
 }
@@ -60,13 +76,6 @@ func main() {
 	err = server.Listen()
 	if err != nil {
 		log.Fatalf("failed to listen to server: %v", err)
-	}
-}
-
-func NewChatServer() *ChatServer {
-	return &ChatServer{
-		clients: []*ChatClient{},
-		rooms:   map[uuid.UUID]*Room{},
 	}
 }
 
@@ -111,12 +120,13 @@ func (s *ChatServer) BuildClient(conn net.Conn) (*ChatClient, error) {
 		ClientId: uuid.New(),
 		Name:     clientName,
 		conn:     conn,
+		RoomId:   s.lobby.Id,
 	}, nil
 }
 
 func (s *ChatServer) Serve(client *ChatClient) {
 	s.clients = append(s.clients, client)
-	client.Greet()
+	client.Greet(s.lobby)
 Serve:
 	for {
 		message, err := client.ReadMessage("")
@@ -131,11 +141,11 @@ Serve:
 				log.Fatalf("error reading message input")
 			}
 		}
-		s.ProcessMessage(message)
+		s.ProcessMessage(*message)
 	}
 }
 
-func (s *ChatServer) ProcessMessage(message *Message) {
+func (s *ChatServer) ProcessMessage(message Message) {
 	messageRoomId := message.Client.RoomId
 	if message.Text == "//help" {
 		message.Client.SendHelp()
@@ -172,16 +182,16 @@ func (s *ChatServer) ProcessMessage(message *Message) {
 			}
 		}
 	} else if message.Text == "//leave" {
-		if message == nil {
-			err := message.Client.Notify("you can checkout any time you like but you can never leave if you don't first join a room")
+		if message.Client.RoomId == s.lobby.Id {
+			err := message.Client.Notify("you can checkout any time you like but you can never leave the lobby")
 			if err != nil {
 				fmt.Printf("error responding to bad //leave request: %v", err)
 			}
 			return
 		}
-		err := message.Client.LeaveRoom()
+		err := s.RemoveClientToLobby(&message.Client)
 		if err != nil {
-			fmt.Printf("error leaving room: %v", err)
+			fmt.Printf("error returning to lobby: %v", err)
 		}
 	} else if message.Text == "//create-room" {
 		roomName, err := message.Client.ReadMessage("Enter the room name you would like to create:")
@@ -207,13 +217,6 @@ func (s *ChatServer) ProcessMessage(message *Message) {
 		}
 	} else if message.Text == "//members" {
 		roomId := messageRoomId
-		if roomId == nil {
-			err := message.Client.Notify("you must join a room before you can list members")
-			if err != nil {
-				fmt.Printf("error notifying client of member list problem: %v", err)
-			}
-			return
-		}
 		roomClients := make([]string, 0)
 		for _, client := range s.clients {
 			if client.RoomId == roomId {
@@ -243,16 +246,14 @@ func (s *ChatServer) ProcessMessage(message *Message) {
 			if err != nil {
 				fmt.Printf("error confirming name change with requesting client: %v", err)
 			}
-			if changeNameMessage.Client.RoomId != nil {
-				err = s.NotifyClientsWithinRoom(&Message{
-					Client:    changeNameMessage.Client,
-					UtteredAt: changeNameMessage.UtteredAt,
-					Text:      fmt.Sprintf("%s changed their name to %s", previousName, newName),
-				})
-				if err != nil {
-					fmt.Printf("error notifying room members about member name change: %v", err)
-					return
-				}
+			err = s.NotifyClientsWithinRoom(Message{
+				Client:    changeNameMessage.Client,
+				UtteredAt: changeNameMessage.UtteredAt,
+				Text:      fmt.Sprintf("%s changed their name to %s", previousName, newName),
+			})
+			if err != nil {
+				fmt.Printf("error notifying room members about member name change: %v", err)
+				return
 			}
 		}
 	} else {
@@ -262,6 +263,11 @@ func (s *ChatServer) ProcessMessage(message *Message) {
 			fmt.Printf("error notifying clients of new message")
 		}
 	}
+}
+
+func (s *ChatServer) RemoveClientToLobby(client *ChatClient) error {
+	client.RoomId = s.lobby.Id
+	return client.Notify(fmt.Sprintf("you are now in the lobby"))
 }
 
 func (s *ChatServer) CreateRoom(roomName string) (*Room, error) {
@@ -279,9 +285,6 @@ func (s *ChatServer) CreateRoom(roomName string) (*Room, error) {
 	return room, nil
 }
 
-func (s *ChatServer) AddClientToRoom(client *ChatClient, room *Room) {
-}
-
 func (s *ChatServer) RemoveClient(client *ChatClient) {
 	var clientIndex int
 	for i, chatClient := range s.clients {
@@ -292,10 +295,7 @@ func (s *ChatServer) RemoveClient(client *ChatClient) {
 	s.clients = append(s.clients[:clientIndex], s.clients[clientIndex+1:]...)
 }
 
-func (s *ChatServer) NotifyClientsWithinRoom(message *Message) error {
-	if message.Client.RoomId == nil {
-		return message.Client.Notify("You must first join a room to send a message")
-	}
+func (s *ChatServer) NotifyClientsWithinRoom(message Message) error {
 	for _, client := range s.clients {
 		if client.RoomId == message.Client.RoomId && client.ClientId != message.Client.ClientId {
 			return client.Notify(message.String())
@@ -304,20 +304,15 @@ func (s *ChatServer) NotifyClientsWithinRoom(message *Message) error {
 	return nil
 }
 
-func (c *ChatClient) Greet() {
-	err := writeText(c.conn, fmt.Sprintf("Hello %s. Feel free to speak your mind. Type //help if you need a hand", c.Name))
+func (c *ChatClient) Greet(room Room) {
+	err := writeText(c.conn, fmt.Sprintf("Hello %s. You are now in the %s room. Feel free to speak your mind. Type //help if you need a hand", c.Name, room.Name))
 	if err != nil {
 		log.Fatalf("failed to greet the client: %v", err)
 	}
 }
 
-func (c *ChatClient) LeaveRoom() error {
-	c.RoomId = nil
-	return c.Notify("you are no longer in a room")
-}
-
 func (c *ChatClient) JoinRoom(room *Room) error {
-	c.RoomId = &room.Id
+	c.RoomId = room.Id
 	return c.Notify(fmt.Sprintf("You have now joined '%s'", room.Name))
 }
 
@@ -367,7 +362,7 @@ func (c *ChatClient) ReadMessage(prompt string) (*Message, error) {
 	}
 	input = trimMessage(input)
 	return &Message{
-		Client:    c,
+		Client:    *c,
 		UtteredAt: time.Now(),
 		Text:      input,
 	}, nil
