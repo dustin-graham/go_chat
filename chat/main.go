@@ -195,7 +195,24 @@ func (s *ChatServer) ProcessMessage(message *Message) {
 			}
 		}
 	} else if message.Text == "//members" {
-
+		roomId := message.Client.RoomId
+		if roomId == nil {
+			err := message.Client.Notify("you must join a room before you can list members")
+			if err != nil {
+				fmt.Printf("error notifying client of member list problem: %v", err)
+			}
+			return
+		}
+		roomClients := make([]string, 0)
+		for _, client := range s.clients {
+			if client.RoomId == roomId {
+				roomClients = append(roomClients, client.Name)
+			}
+		}
+		err := message.Client.Notify(fmt.Sprintf("Room members: %s", strings.Join(roomClients, ", ")))
+		if err != nil {
+			fmt.Printf("error responding to room member request: %v", err)
+		}
 	} else if message.Text == "//set-name" {
 
 	} else {
