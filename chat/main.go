@@ -225,10 +225,42 @@ func (s *ChatServer) ProcessMessage(message *Message) {
 			fmt.Printf("error responding to room member request: %v", err)
 		}
 	} else if message.Text == "//set-name" {
-
+		changeNameMessage, err := message.Client.ReadMessage("Enter the moniker by which you would like to be known:")
+		if err != nil {
+			fmt.Printf("error getting the client's new name")
+		} else {
+			previousName := message.Client.Name
+			newName := changeNameMessage.Text
+			err := message.Client.SetName(newName)
+			if err != nil {
+				err := message.Client.Notify(err.Error())
+				if err != nil {
+					fmt.Printf("error responding to set-name request: %v", err)
+				}
+				return
+			}
+			err = changeNameMessage.Client.Notify(fmt.Sprintf("You got it. You shall henceforth be known as '%s'. I'll let everyone else know.", newName))
+			if err != nil {
+				fmt.Printf("error confirming name change with requesting client: %v", err)
+			}
+			if changeNameMessage.Client.RoomId != nil {
+				err = s.NotifyClientsWithinRoom(&Message{
+					Client:    changeNameMessage.Client,
+					UtteredAt: changeNameMessage.UtteredAt,
+					Text:      fmt.Sprintf("%s changed their name to %s", previousName, newName),
+				})
+				if err != nil {
+					fmt.Printf("error notifying room members about member name change: %v", err)
+					return
+				}
+			}
+		}
 	} else {
 		// just a message
-		s.NotifyClientsWithinRoom(message)
+		err := s.NotifyClientsWithinRoom(message)
+		if err != nil {
+			fmt.Printf("error notifying clients of new message")
+		}
 	}
 }
 
@@ -260,22 +292,16 @@ func (s *ChatServer) RemoveClient(client *ChatClient) {
 	s.clients = append(s.clients[:clientIndex], s.clients[clientIndex+1:]...)
 }
 
-func (s *ChatServer) NotifyClientsWithinRoom(message *Message) {
+func (s *ChatServer) NotifyClientsWithinRoom(message *Message) error {
 	if message.Client.RoomId == nil {
-		err := message.Client.Notify("You must first join a room to send a message")
-		if err != nil {
-			log.Fatalf("error notifying client about joining a room")
-		}
-		return
+		return message.Client.Notify("You must first join a room to send a message")
 	}
 	for _, client := range s.clients {
 		if client.RoomId == message.Client.RoomId && client.ClientId != message.Client.ClientId {
-			err := client.Notify(message.String())
-			if err != nil {
-				log.Fatalf("error notifying client")
-			}
+			return client.Notify(message.String())
 		}
 	}
+	return nil
 }
 
 func (c *ChatClient) Greet() {
@@ -293,6 +319,14 @@ func (c *ChatClient) LeaveRoom() error {
 func (c *ChatClient) JoinRoom(room *Room) error {
 	c.RoomId = &room.Id
 	return c.Notify(fmt.Sprintf("You have now joined '%s'", room.Name))
+}
+
+func (c *ChatClient) SetName(name string) error {
+	if name == "" {
+		return fmt.Errorf("name cannot be blank")
+	}
+	c.Name = name
+	return nil
 }
 
 func (c *ChatClient) SendHelp() {
