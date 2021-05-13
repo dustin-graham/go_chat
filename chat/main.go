@@ -136,6 +136,7 @@ Serve:
 }
 
 func (s *ChatServer) ProcessMessage(message *Message) {
+	messageRoomId := message.Client.RoomId
 	if message.Text == "//help" {
 		message.Client.SendHelp()
 	} else if message.Text == "//rooms" {
@@ -171,7 +172,17 @@ func (s *ChatServer) ProcessMessage(message *Message) {
 			}
 		}
 	} else if message.Text == "//leave" {
-
+		if message == nil {
+			err := message.Client.Notify("you can checkout any time you like but you can never leave if you don't first join a room")
+			if err != nil {
+				fmt.Printf("error responding to bad //leave request: %v", err)
+			}
+			return
+		}
+		err := message.Client.LeaveRoom()
+		if err != nil {
+			fmt.Printf("error leaving room: %v", err)
+		}
 	} else if message.Text == "//create-room" {
 		roomName, err := message.Client.ReadMessage("Enter the room name you would like to create:")
 		if err != nil {
@@ -195,7 +206,7 @@ func (s *ChatServer) ProcessMessage(message *Message) {
 			}
 		}
 	} else if message.Text == "//members" {
-		roomId := message.Client.RoomId
+		roomId := messageRoomId
 		if roomId == nil {
 			err := message.Client.Notify("you must join a room before you can list members")
 			if err != nil {
@@ -272,6 +283,11 @@ func (c *ChatClient) Greet() {
 	if err != nil {
 		log.Fatalf("failed to greet the client: %v", err)
 	}
+}
+
+func (c *ChatClient) LeaveRoom() error {
+	c.RoomId = nil
+	return c.Notify("you are no longer in a room")
 }
 
 func (c *ChatClient) JoinRoom(room *Room) error {
