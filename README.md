@@ -1,7 +1,7 @@
 # Chat Server
 ## Environment
-CHAT_SERVER_PORT - defaults to 8080
-CHAT_SERVER_IP - defaults to 127.0.0.1
+- CHAT_SERVER_PORT - defaults to 8080
+- CHAT_SERVER_IP - defaults to 127.0.0.1
 
 ## Running this Sample
 ### GO Run

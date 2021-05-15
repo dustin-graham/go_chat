@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"github.com/google/uuid"
-	"log"
 	"net"
 	"time"
 )
@@ -27,6 +26,7 @@ func (c *ChatClient) ReadMessage(prompt string) (*Message, error) {
 			return nil, err
 		}
 	}
+	// TODO: reuse the reader
 	input, err := bufio.NewReader(c.conn).ReadString('\n')
 	if err != nil {
 		return nil, err
@@ -46,14 +46,15 @@ func (c *ChatClient) Notify(message string) error {
 	return nil
 }
 
-func (c *ChatClient) Greet(room Room) {
+func (c *ChatClient) Greet(room Room) error {
 	err := writeText(c.conn, fmt.Sprintf("Hello %s. You are now in the %s room. Feel free to speak your mind. Type //help if you need a hand", c.Name, room.Name))
 	if err != nil {
-		log.Fatalf("failed to greet the client: %v", err)
+		return err
 	}
+	return nil
 }
 
-func (c *ChatClient) SendHelp() {
+func (c *ChatClient) SendHelp() error {
 	help := `
 Use one of the following commands and your wildest dreams will come true
 
@@ -67,8 +68,9 @@ Use one of the following commands and your wildest dreams will come true
 `
 	err := writeText(c.conn, help)
 	if err != nil {
-		log.Fatalf("failed to be helpful: %v", err)
+		return err
 	}
+	return nil
 }
 
 func (c *ChatClient) JoinRoom(room *Room) error {

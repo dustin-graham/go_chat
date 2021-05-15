@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"io"
-	"log"
 	"net"
 	"os"
 	"strings"
@@ -48,32 +47,26 @@ func (s *ChatServer) Start() error {
 	}
 	s.listener = listener
 
-	err = s.listenForClientConnections()
-	if err != nil {
-		log.Fatalf("failed to listen to server: %v", err)
-	}
+	s.listenForClientConnections()
 	return nil
 }
 
-func (s *ChatServer) listenForClientConnections() error {
+func (s *ChatServer) listenForClientConnections() {
 	for {
 		conn, err := s.listener.Accept()
 		if err != nil {
-			log.Fatalf("error accepting connection: %v", err)
+			fmt.Printf("failed to accept new connection: %v", err)
+			return
 		}
 		go func() {
 			client, err := s.BuildClient(conn)
 			if err != nil {
-				if errors.Is(err, io.EOF) {
-					println("closing client connection")
-					// close the connection
-					_ = conn.Close()
-				} else {
-					log.Fatalf("unexpected error building the client: %v", err)
-				}
-			} else {
-				go s.ServeClient(client)
+				fmt.Printf("error building the client: %v", err)
+				// try and close the client connection
+				_ = conn.Close()
+				return
 			}
+			s.ServeClient(client)
 		}()
 	}
 }
@@ -88,7 +81,10 @@ func (s *ChatServer) BuildClient(conn net.Conn) (*ChatClient, error) {
 
 func (s *ChatServer) ServeClient(client *ChatClient) {
 	s.clients = append(s.clients, client)
-	client.Greet(s.lobby)
+	err := client.Greet(s.lobby)
+	if err != nil {
+		fmt.Printf("got an error while being friendly: %v", err)
+	}
 	for {
 		message, err := client.ReadMessage("")
 		if err != nil {
@@ -99,18 +95,23 @@ func (s *ChatServer) ServeClient(client *ChatClient) {
 				_ = client.Close()
 				break
 			} else {
-				log.Fatalf("error reading message input")
+				fmt.Printf("error reading message input: %v", err)
 			}
+		} else {
+			s.ProcessMessage(*message)
 		}
-		s.ProcessMessage(*message)
 	}
 }
 
 func (s *ChatServer) ProcessMessage(message Message) {
 	messageRoomId := message.Client.RoomId
-	if message.Text == "//help" {
-		message.Client.SendHelp()
-	} else if message.Text == "//rooms" {
+	switch message.Text {
+	case "//help":
+		err := message.Client.SendHelp()
+		if err != nil {
+			fmt.Printf("encountered an error while being helpful: %v", err)
+		}
+	case "//rooms":
 		roomNames := make([]string, 0)
 		for _, room := range s.rooms {
 			roomNames = append(roomNames, room.Name)
@@ -120,7 +121,7 @@ func (s *ChatServer) ProcessMessage(message Message) {
 		if err != nil {
 			fmt.Printf("error sending rooms list to %s: %v", message.Client.Name, err)
 		}
-	} else if message.Text == "//join" {
+	case "//join":
 		roomName, err := message.Client.ReadMessage("Enter the room name you would like to join:")
 		if err != nil {
 			fmt.Printf("error getting room name to join")
@@ -142,7 +143,7 @@ func (s *ChatServer) ProcessMessage(message Message) {
 				fmt.Printf("error responding to create room request: %v", err)
 			}
 		}
-	} else if message.Text == "//leave" {
+	case "//leave":
 		if message.Client.RoomId == s.lobby.Id {
 			err := message.Client.Notify("you can checkout any time you like but you can never leave the lobby")
 			if err != nil {
@@ -154,7 +155,7 @@ func (s *ChatServer) ProcessMessage(message Message) {
 		if err != nil {
 			fmt.Printf("error returning to lobby: %v", err)
 		}
-	} else if message.Text == "//create-room" {
+	case "//create-room":
 		roomName, err := message.Client.ReadMessage("Enter the room name you would like to create:")
 		if err != nil {
 			fmt.Printf("error getting room name to create")
@@ -176,7 +177,7 @@ func (s *ChatServer) ProcessMessage(message Message) {
 				return
 			}
 		}
-	} else if message.Text == "//members" {
+	case "//members":
 		roomId := messageRoomId
 		roomClients := make([]string, 0)
 		for _, client := range s.clients {
@@ -188,7 +189,7 @@ func (s *ChatServer) ProcessMessage(message Message) {
 		if err != nil {
 			fmt.Printf("error responding to room member request: %v", err)
 		}
-	} else if message.Text == "//set-name" {
+	case "//set-name":
 		changeNameMessage, err := message.Client.ReadMessage("Enter the moniker by which you would like to be known:")
 		if err != nil {
 			fmt.Printf("error getting the client's new name")
@@ -217,7 +218,7 @@ func (s *ChatServer) ProcessMessage(message Message) {
 				return
 			}
 		}
-	} else {
+	default:
 		// just a message
 		err := s.NotifyClientsWithinRoom(message)
 		if err != nil {

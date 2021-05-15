@@ -7,6 +7,9 @@ import (
 func main() {
 	println("hello")
 	server := NewChatServer()
+	if err := server.Start(); err != nil {
+		return
+	}
 	err := server.Start()
 	if err != nil {
 		log.Fatalln("error creating server")
