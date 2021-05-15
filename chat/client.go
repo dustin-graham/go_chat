@@ -13,10 +13,18 @@ type ChatClient struct {
 	Name     string
 	conn     net.Conn
 	RoomId   uuid.UUID
+	reader   *bufio.Reader
 }
 
 func NewChatClient(clientId uuid.UUID, name string, conn net.Conn, roomId uuid.UUID) *ChatClient {
-	return &ChatClient{ClientId: clientId, Name: name, conn: conn, RoomId: roomId}
+	reader := bufio.NewReader(conn)
+	return &ChatClient{
+		ClientId: clientId,
+		Name:     name,
+		conn:     conn,
+		RoomId:   roomId,
+		reader:   reader,
+	}
 }
 
 func (c *ChatClient) ReadMessage(prompt string) (*Message, error) {
@@ -26,8 +34,7 @@ func (c *ChatClient) ReadMessage(prompt string) (*Message, error) {
 			return nil, err
 		}
 	}
-	// TODO: reuse the reader
-	input, err := bufio.NewReader(c.conn).ReadString('\n')
+	input, err := c.reader.ReadString('\n')
 	if err != nil {
 		return nil, err
 	}

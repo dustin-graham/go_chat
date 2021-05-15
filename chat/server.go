@@ -74,6 +74,11 @@ func (s *ChatServer) listenForClientConnections() {
 func (s *ChatServer) BuildClient(conn net.Conn) (*ChatClient, error) {
 	clientName, err := getTextInput(conn, "Hello there! Welcome to the best chat service ever. Please provide your name")
 	if err != nil {
+		if errors.Is(err, io.EOF) {
+			fmt.Println("connection closed before we could create the client")
+		} else {
+			fmt.Printf("error reading message input: %v", err)
+		}
 		return nil, err
 	}
 	return NewChatClient(uuid.New(), clientName, conn, s.lobby.Id), nil
