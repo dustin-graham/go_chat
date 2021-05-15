@@ -3,3 +3,17 @@ how do I handle client disconnections? I want to be able to clean up the client 
 
 Features to add:
 a request help feature: type in //help and get a prompt that tells you how to use the chat service
+
+channels?
+It may be interesting to have a single channel for each room and then be able to message all clients through the channel rather than looping over members and sending message
+- when a client joins a room we'd need to switch which channel they listen to
+- when a client sends a message it would need to process that message and respond to commands but then forward messages to the room's channel
+
+Deployment?
+We could dockerize it
+
+Testing?
+how to test something like this, we'll need to look into go's test tools to see if we can connect and communicate between server and client
+
+Organization?
+- how to make the code clean and easy to read, more maintainable. maybe something like handler functions for different commands?

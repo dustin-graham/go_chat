@@ -1,4 +1,4 @@
-module github.com/dustin-graham/walmart_homework/chat
+module github.com/dustin-graham/walmart_homework
 
 go 1.16
 
