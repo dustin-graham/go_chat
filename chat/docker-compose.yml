@@ -1,0 +1,16 @@
+version: "3.7"
+
+services:
+  chat:
+    build:
+      context: ./
+      dockerfile: ./Dockerfile
+    env_file:
+      - env_file
+    volumes:
+      - go-modules:/go/pkg/mod
+    ports:
+      - "8080:8080"
+
+volumes:
+  go-modules:

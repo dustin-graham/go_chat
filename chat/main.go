@@ -5,6 +5,7 @@ import (
 )
 
 func main() {
+	println("hello")
 	server := NewChatServer()
 	err := server.Start()
 	if err != nil {

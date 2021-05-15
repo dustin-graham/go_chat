@@ -1,15 +1,21 @@
-# Code Challenges
+# Chat Server
+## Environment
+CHAT_SERVER_PORT - defaults to 8080
+CHAT_SERVER_IP - defaults to 127.0.0.1
 
-We want to see code you've written. Some people don't have open source or freely available code they can share, so we have some short code challenges you can do. You can pick from `INTERSECTION.md`, `SPELL_CHECK.md`, or `CHAT.md`.
+## Running this Sample
+### GO Run
+`go run .`
 
-Unless the challenge specifically says otherwise, use whatever language and tech stack you're most comfortable with.
+### Docker Compose
+`docker-compose up --build`
+Please note that the compose config depends on a file named `env_file` which contains the necessary environment variables for the program.
 
-Plan on spending around four hours of time to complete this. This is to protect you; we don't want you to spend days coding only for either one of us to decide later we aren't a good fit for each other. It isn't a hard cutoff. You're free to spend more time if you'd like to. If you don't finish the assignment, you should be able to talk about how you would implement the remaining parts.
+### Makefile
+This just adds some convenience to docker-compose operations.
 
-Just like in real life, you can use the internet to help you remember some syntax or figure out a library. Unlike real life, you *should not* use someone else's solution for the project. Use good judgement. Googling how to read in a file is fine. Googling "how does a spell-checker work" to understand an algorithm is fine. Copying and pasting a spell-checker you've found online is not fine.
+I won't enumerate the make file scripts available as those are easy enough to read directly. But if you are unfamiliar with Make you can try the following:
 
-The goal is to see how you approach a problem. Can you decide on and implement an algorithm? What data structures do you use? How do you organize your code? What parts of the problem seem most important to solve first? How would the user interact with your program?
+`make rebuild-and-run-chat-server`
 
-Please contact us if anything in the instructions is confusing. We've tried to leave space for creativity and problem-solving, but we also don't want you becoming frustrated or stuck.
-
-Good luck!
+This will stop the server if it is already running, rebuild the container, and bring it up

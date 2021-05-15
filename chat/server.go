@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
 	"strings"
 )
 
@@ -29,7 +30,19 @@ func NewChatServer() *ChatServer {
 }
 
 func (s *ChatServer) Start() error {
-	listener, err := net.Listen("tcp", "127.0.0.1:8080")
+	IP := os.Getenv("CHAT_SERVER_IP")
+	if IP == "" {
+		fmt.Println("CHAT_SERVER_IP not specified. using default 127.0.0.1")
+		IP = "127.0.0.1"
+	}
+	port := os.Getenv("CHAT_SERVER_PORT")
+	if port == "" {
+		fmt.Println("CHAT_SERVER_PORT not specified. using default 8080")
+		port = "8080"
+	}
+	address := fmt.Sprintf("%s:%s", IP, port)
+	println(address)
+	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return err
 	}
@@ -51,9 +64,16 @@ func (s *ChatServer) listenForClientConnections() error {
 		go func() {
 			client, err := s.BuildClient(conn)
 			if err != nil {
-				log.Fatalf("error building the client: %v", err)
+				if errors.Is(err, io.EOF) {
+					println("closing client connection")
+					// close the connection
+					_ = conn.Close()
+				} else {
+					log.Fatalf("unexpected error building the client: %v", err)
+				}
+			} else {
+				go s.ServeClient(client)
 			}
-			go s.ServeClient(client)
 		}()
 	}
 }
