@@ -40,7 +40,7 @@ func (c *ChatClient) ReadMessage(prompt string) (*Message, error) {
 	}
 	input = trimMessage(input)
 	return &Message{
-		Client:    *c,
+		Client:    c,
 		UtteredAt: time.Now(),
 		Text:      input,
 	}, nil

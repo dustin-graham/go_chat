@@ -6,7 +6,7 @@ import (
 )
 
 type Message struct {
-	Client    ChatClient
+	Client    *ChatClient
 	UtteredAt time.Time
 	Text      string
 }
