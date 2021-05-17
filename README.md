@@ -2,6 +2,7 @@
 ## Environment
 - CHAT_SERVER_PORT - defaults to 8080
 - CHAT_SERVER_IP - defaults to 127.0.0.1
+- CHAT_SERVER_LOG_FILE_PATH - defaults to chat_log.txt
 
 ## Running this Sample
 ### GO Run
