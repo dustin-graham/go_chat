@@ -2,13 +2,16 @@ package main
 
 import "github.com/google/uuid"
 
+type RoomId uuid.UUID
+
 type Room struct {
-	Id   uuid.UUID
-	Name string
+	Id       RoomId
+	Name     string
+	Messages []Message
 }
 
-func NewRoom(id uuid.UUID, name string) *Room {
-	return &Room{Id: id, Name: name}
+func NewRoom(name string) *Room {
+	return &Room{Id: RoomId(uuid.New()), Name: name}
 }
 
 func (r Room) String() string {

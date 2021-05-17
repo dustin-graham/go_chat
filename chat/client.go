@@ -8,21 +8,22 @@ import (
 	"time"
 )
 
+type ClientId uuid.UUID
 type ChatClient struct {
-	ClientId uuid.UUID
+	ClientId ClientId
 	Name     string
 	conn     net.Conn
-	RoomId   uuid.UUID
+	roomId   RoomId
 	reader   *bufio.Reader
 }
 
-func NewChatClient(clientId uuid.UUID, name string, conn net.Conn, roomId uuid.UUID) *ChatClient {
+func NewChatClient(name string, conn net.Conn, roomId RoomId) *ChatClient {
 	reader := bufio.NewReader(conn)
 	return &ChatClient{
-		ClientId: clientId,
+		ClientId: ClientId(uuid.New()),
 		Name:     name,
 		conn:     conn,
-		RoomId:   roomId,
+		roomId:   roomId,
 		reader:   reader,
 	}
 }
@@ -46,11 +47,10 @@ func (c *ChatClient) ReadMessage(prompt string) (*Message, error) {
 	}, nil
 }
 
-func (c *ChatClient) Notify(message string) error {
+func (c *ChatClient) Notify(message string) {
 	if err := writeText(c.conn, message); err != nil {
-		return err
+		fmt.Printf("error sending '%s' to %s", message, c.Name)
 	}
-	return nil
 }
 
 func (c *ChatClient) Greet(room Room) error {
@@ -80,9 +80,12 @@ Use one of the following commands and your wildest dreams will come true
 	return nil
 }
 
-func (c *ChatClient) JoinRoom(room *Room) error {
-	c.RoomId = room.Id
-	return c.Notify(fmt.Sprintf("You have now joined '%s'", room.Name))
+func (c *ChatClient) SetRoomId(roomId RoomId) {
+	c.roomId = roomId
+}
+
+func (c *ChatClient) GetRoomId() RoomId {
+	return c.roomId
 }
 
 func (c *ChatClient) SetName(name string) error {

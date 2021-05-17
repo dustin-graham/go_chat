@@ -3,12 +3,12 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"io"
 	"log"
 	"net"
 	"os"
 	"strings"
+	"time"
 )
 
 var (
@@ -25,15 +25,15 @@ type ChatServer struct {
 	listener net.Listener
 	clients  []*ChatClient
 	lobby    Room
-	rooms    map[uuid.UUID]*Room
+	rooms    map[RoomId]*Room
 	logger   *log.Logger
 }
 
 func NewChatServer(logger *log.Logger) *ChatServer {
-	lobby := NewRoom(uuid.New(), "Lobby")
+	lobby := NewRoom("Lobby")
 	return &ChatServer{
 		clients: []*ChatClient{},
-		rooms: map[uuid.UUID]*Room{
+		rooms: map[RoomId]*Room{
 			lobby.Id: lobby,
 		},
 		lobby:  *lobby,
@@ -72,19 +72,19 @@ func (s *ChatServer) listenForClientConnections() {
 			return
 		}
 		go func() {
-			client, err := s.BuildClient(conn)
+			client, err := s.buildClient(conn)
 			if err != nil {
 				fmt.Printf("error building the client: %v", err)
 				// try and close the client connection
 				_ = conn.Close()
 				return
 			}
-			s.ServeClient(client)
+			s.serveClient(client)
 		}()
 	}
 }
 
-func (s *ChatServer) BuildClient(conn net.Conn) (*ChatClient, error) {
+func (s *ChatServer) buildClient(conn net.Conn) (*ChatClient, error) {
 	clientName, err := getTextInput(conn, "Hello there! Welcome to the best chat service ever. Please provide your name")
 	if err != nil {
 		if errors.Is(err, io.EOF) {
@@ -94,10 +94,10 @@ func (s *ChatServer) BuildClient(conn net.Conn) (*ChatClient, error) {
 		}
 		return nil, err
 	}
-	return NewChatClient(uuid.New(), clientName, conn, s.lobby.Id), nil
+	return NewChatClient(clientName, conn, s.lobby.Id), nil
 }
 
-func (s *ChatServer) ServeClient(client *ChatClient) {
+func (s *ChatServer) serveClient(client *ChatClient) {
 	s.clients = append(s.clients, client)
 	err := client.Greet(s.lobby)
 	if err != nil {
@@ -109,19 +109,19 @@ func (s *ChatServer) ServeClient(client *ChatClient) {
 			if errors.Is(err, io.EOF) {
 				println("closing client connection")
 				// close the connection and remove the client
-				s.RemoveClient(client)
+				s.removeClient(client)
 				_ = client.Close()
 				break
 			} else {
 				fmt.Printf("error reading message input: %v", err)
 			}
 		} else {
-			s.ProcessMessage(*message)
+			s.processMessage(*message)
 		}
 	}
 }
 
-func (s *ChatServer) ProcessMessage(message Message) {
+func (s *ChatServer) processMessage(message Message) {
 	if message.Text == "" {
 		// ignore empty messages
 		return
@@ -130,7 +130,9 @@ func (s *ChatServer) ProcessMessage(message Message) {
 	case HelpCommand:
 		s.helpClient(message.Client)
 	case ListRoomsCommand:
-		s.listRooms(message.Client)
+		roomNames := s.GetRoomNames()
+		rooms := strings.Join(roomNames, ", ")
+		message.Client.Notify(rooms)
 	case JoinRoomCommand:
 		s.joinRoom(message.Client)
 	case LeaveRoomCommand:
@@ -138,15 +140,12 @@ func (s *ChatServer) ProcessMessage(message Message) {
 	case CreateRoomCommand:
 		s.createRoom(message.Client)
 	case ListMembersCommand:
-		s.listMembers(message.Client)
+		s.getRoomMembers(message.Client)
 	case SetNameCommand:
 		s.setClientName(message.Client)
 	default:
 		// just a message
-		err := s.NotifyClientsWithinRoom(message)
-		if err != nil {
-			s.logger.Printf("error sending message to room: %v", err)
-		}
+		s.notifyClientsWithinRoom(message)
 	}
 }
 
@@ -160,68 +159,52 @@ func (s *ChatServer) setClientName(client *ChatClient) {
 	newName := changeNameMessage.Text
 	err = client.SetName(newName)
 	if err != nil {
-		_ = client.Notify(err.Error())
+		client.Notify(err.Error())
 		return
 	}
-	err = changeNameMessage.Client.Notify(fmt.Sprintf("You got it. You shall henceforth be known as '%s'. I'll let everyone else know.", newName))
-	if err != nil {
-		fmt.Printf("error confirming name change with requesting client: %v", err)
-	}
-	err = s.NotifyClientsWithinRoom(Message{
+	changeNameMessage.Client.Notify(fmt.Sprintf("You got it. You shall henceforth be known as '%s'. I'll let everyone else know.", newName))
+	s.notifyClientsWithinRoom(Message{
 		Client:    changeNameMessage.Client,
 		UtteredAt: changeNameMessage.UtteredAt,
 		Text:      fmt.Sprintf("%s changed their name to %s", previousName, newName),
 	})
-	if err != nil {
-		fmt.Printf("error notifying room members about member name change: %v", err)
-	}
 }
 
-func (s *ChatServer) listMembers(client *ChatClient) {
-	roomId := client.RoomId
+func (s *ChatServer) getRoomMembers(client *ChatClient) {
+	roomId := client.roomId
 	roomClients := make([]string, 0)
 	for _, client := range s.clients {
-		if client.RoomId == roomId {
+		if client.roomId == roomId {
 			roomClients = append(roomClients, client.Name)
 		}
 	}
-	err := client.Notify(fmt.Sprintf("Room members: %s", strings.Join(roomClients, ", ")))
-	if err != nil {
-		fmt.Printf("error responding to room member request: %v", err)
-	}
+	client.Notify(fmt.Sprintf("Room members: %s", strings.Join(roomClients, ", ")))
 }
 
 func (s *ChatServer) createRoom(client *ChatClient) {
-	roomName, err := client.ReadMessage("Enter the room name you would like to create:")
+	roomNameMessage, err := client.ReadMessage("Enter the room name you would like to create:")
 	if err != nil {
 		fmt.Printf("error getting room name to create")
 		return
 	}
-	room, err := s.CreateRoom(roomName.Text)
-	if err != nil {
-		_ = client.Notify(err.Error())
-		return
+	roomName := roomNameMessage.Text
+	for _, room := range s.rooms {
+		if room.Name == roomName {
+			client.Notify(fmt.Sprintf("room with name '%s' already exists", roomName))
+		}
 	}
-	err = client.JoinRoom(room)
-	if err != nil {
-		_ = client.Notify(err.Error())
-		return
-	}
+	room := NewRoom(roomName)
+	s.rooms[room.Id] = room
+	client.SetRoomId(room.Id)
 }
 
 func (s *ChatServer) removeClientFromRoom(client *ChatClient) {
-	if client.RoomId == s.lobby.Id {
-		err := client.Notify("you can checkout any time you like but you can never leave the lobby")
-		if err != nil {
-			fmt.Printf("error responding to bad //leave request: %v", err)
-		}
+	if client.roomId == s.lobby.Id {
+		client.Notify("you can checkout any time you like but you can never leave the lobby")
 		return
 	}
-	client.RoomId = s.lobby.Id
-	err := client.Notify(fmt.Sprintf("you are now in the lobby"))
-	if err != nil {
-		fmt.Printf("error returning to lobby: %v", err)
-	}
+	client.roomId = s.lobby.Id
+	client.Notify(fmt.Sprintf("you are now in the lobby"))
 }
 
 func (s *ChatServer) findRoom(roomName string) (*Room, error) {
@@ -242,35 +225,22 @@ func (s *ChatServer) joinRoom(client *ChatClient) {
 	room, err := s.findRoom(roomNameMessage.Text)
 	if err != nil {
 		if errors.Is(err, ErrRoomNotFound) {
-			_ = writeText(client.conn, fmt.Sprintf("room not found: %s", roomNameMessage.Text))
+			client.Notify(fmt.Sprintf("room not found: %s", roomNameMessage.Text))
 		} else {
-			_ = writeText(client.conn, fmt.Sprintf("error adding you to room: %s", roomNameMessage.Text))
+			client.Notify(fmt.Sprintf("error adding you to room: %s", roomNameMessage.Text))
 		}
 		return
 	}
-	err = client.JoinRoom(room)
-	if err != nil {
-		err := client.Notify(err.Error())
-		if err != nil {
-			fmt.Printf("error responding to join room request: %v", err)
-		}
-	}
-	err = client.Notify(fmt.Sprintf("could not find room named %s", roomNameMessage.Text))
-	if err != nil {
-		fmt.Printf("error responding to create room request: %v", err)
-	}
+	client.SetRoomId(room.Id)
+	client.Notify(fmt.Sprintf("You have now joined '%s'", room.Name))
 }
 
-func (s *ChatServer) listRooms(client *ChatClient) {
+func (s *ChatServer) GetRoomNames() []string {
 	roomNames := make([]string, 0)
 	for _, room := range s.rooms {
 		roomNames = append(roomNames, room.Name)
 	}
-	rooms := strings.Join(roomNames, ", ")
-	err := client.Notify(rooms)
-	if err != nil {
-		fmt.Printf("error sending rooms list to %s: %v", client.Name, err)
-	}
+	return roomNames
 }
 
 func (s *ChatServer) helpClient(client *ChatClient) {
@@ -280,34 +250,50 @@ func (s *ChatServer) helpClient(client *ChatClient) {
 	}
 }
 
-func (s *ChatServer) CreateRoom(roomName string) (*Room, error) {
-	for _, room := range s.rooms {
-		if room.Name == roomName {
-			return nil, fmt.Errorf("room with name '%s' already exists", roomName)
-		}
-	}
-	roomId := uuid.New()
-	room := NewRoom(roomId, roomName)
-	s.rooms[roomId] = room
-	return room, nil
-}
-
 func (s *ChatServer) logMessage(message Message) {
-	room := s.rooms[message.Client.RoomId]
+	room := s.rooms[message.Client.roomId]
 	s.logger.Printf("In %s: %s", room.Name, message.String())
 }
 
-func (s *ChatServer) NotifyClientsWithinRoom(message Message) error {
+func (s *ChatServer) notifyClientsWithinRoom(message Message) {
 	s.logMessage(message)
+	roomId := message.Client.roomId
+
+	// record this message in the room
+	s.rooms[roomId].Messages = append(s.rooms[roomId].Messages, message)
+
 	for _, client := range s.clients {
-		if client.RoomId == message.Client.RoomId && client.ClientId != message.Client.ClientId {
-			return client.Notify(message.String())
+		if client.roomId == roomId && client.ClientId != message.Client.ClientId {
+			client.Notify(message.String())
 		}
 	}
+}
+
+func (s *ChatServer) GetRoomMessages(roomName string) ([]Message, error) {
+	room, err := s.findRoom(roomName)
+	if err != nil {
+		return []Message{}, err
+	}
+	return room.Messages, nil
+}
+
+func (s *ChatServer) PostMessageToRoom(roomName string, messageText string) error {
+	room, err := s.findRoom(roomName)
+	if err != nil {
+		return err
+	}
+	s.notifyClientsWithinRoom(Message{
+		Client: &ChatClient{
+			Name:   "API User",
+			roomId: room.Id,
+		},
+		UtteredAt: time.Now(),
+		Text:      messageText,
+	})
 	return nil
 }
 
-func (s *ChatServer) RemoveClient(client *ChatClient) {
+func (s *ChatServer) removeClient(client *ChatClient) {
 	var clientIndex int
 	for i, chatClient := range s.clients {
 		if chatClient == client {
@@ -317,9 +303,8 @@ func (s *ChatServer) RemoveClient(client *ChatClient) {
 	s.clients = append(s.clients[:clientIndex], s.clients[clientIndex+1:]...)
 }
 
-func (s *ChatServer) Stop() error {
+func (s *ChatServer) Stop() {
 	if err := s.listener.Close(); err != nil {
-		return err
+		log.Fatalf("Could not shut down server correctly: %v\n", err)
 	}
-	return nil
 }

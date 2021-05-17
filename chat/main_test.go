@@ -8,21 +8,9 @@ import (
 )
 
 func TestChatServer_RemoveClient(t *testing.T) {
-	susan := &ChatClient{
-		ClientId: uuid.New(),
-		Name:     "Susan",
-		conn:     nil,
-	}
-	dave := &ChatClient{
-		ClientId: uuid.New(),
-		Name:     "Dave",
-		conn:     nil,
-	}
-	bill := &ChatClient{
-		ClientId: uuid.New(),
-		Name:     "Bill",
-		conn:     nil,
-	}
+	susan := NewChatClient("Susan", nil, RoomId(uuid.New()))
+	dave := NewChatClient("Dave", nil, RoomId(uuid.New()))
+	bill := NewChatClient("Bill", nil, RoomId(uuid.New()))
 	type args struct {
 		clientToRemove  *ChatClient
 		expectedClients []*ChatClient
@@ -62,7 +50,7 @@ func TestChatServer_RemoveClient(t *testing.T) {
 					bill,
 				},
 			}
-			s.RemoveClient(tt.args.clientToRemove)
+			s.removeClient(tt.args.clientToRemove)
 			equal := reflect.DeepEqual(tt.args.expectedClients, s.clients)
 			assert.EqualValues(t, true, equal)
 		})
