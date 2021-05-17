@@ -9,8 +9,13 @@ import (
 )
 
 func main() {
+	logFilePath := os.Getenv("CHAT_SERVER_LOG_FILE_PATH")
+	if logFilePath == "" {
+		println("log file path not specified, using default")
+		logFilePath = "chat_log.txt"
+	}
 	logFile, err := os.OpenFile(
-		"chat_log.txt",
+		logFilePath,
 		os.O_APPEND|os.O_CREATE|os.O_WRONLY,
 		0644,
 	)
