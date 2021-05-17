@@ -24,24 +24,24 @@ func main() {
 		log.Fatalf("failed to open log file")
 	}
 
-	// chat chatServer
+	// chat server
 	logger := log.New(logFile, "", log.LstdFlags)
 	chatServer := NewChatServer(logger)
 	go func() {
 		err = chatServer.Start()
 		if err != nil {
-			log.Fatalf("error creating chatServer: %v", err)
+			log.Fatalf("error creating server: %v", err)
 		}
 	}()
 	defer chatServer.Stop()
 
-	// api chatServer
+	// api server
 	apiServer := NewApiServer(chatServer)
 	go func() {
-		println("starting api chatServer")
+		println("starting api server")
 		err := apiServer.Start()
 		if err != nil {
-			log.Fatalf("error creating api chatServer: %v", err)
+			log.Fatalf("error creating api server: %v", err)
 		}
 	}()
 	defer apiServer.Stop()
@@ -50,5 +50,5 @@ func main() {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
 	log.Println(fmt.Sprint(<-ch))
-	log.Println("Stopping API chatServer.")
+	log.Println("Stopping API server.")
 }
